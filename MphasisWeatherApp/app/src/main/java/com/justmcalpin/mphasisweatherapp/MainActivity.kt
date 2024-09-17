@@ -61,13 +61,30 @@ class MainActivity : AppCompatActivity() {
             if (weather != null) {
                 Log.d("Foxhound23989", "Weather data received: $weather")
                 val weatherList = listOf(weather)
-                adapter = WeatherAdapter(weatherList)
+                adapter = WeatherAdapter(weatherList, null) // No error message
                 recyclerView.adapter = adapter
                 Log.d("Foxhound23989", "Adapter set with data")
             } else {
-                Log.d("Foxhound23989", "Weather data is null")
+                val errorMessage = "Failed to fetch weather data. Please try again later."
+                Log.d("Foxhound23989", errorMessage)
+                adapter = WeatherAdapter(null, errorMessage) // Pass the error message
+                recyclerView.adapter = adapter
             }
         })
+
+
+        // Check for the last search
+        val lastSearch = getLastSearch()
+        if (lastSearch != null) {
+            Log.d("Foxhound23989", "Searching for last saved location: $lastSearch")
+            searchJob = CoroutineScope(Dispatchers.Main).launch {
+                weatherViewModel.fetchWeatherByCity(lastSearch, apiKey)
+                editText.setText(lastSearch)  // Optionally set the last search query in the EditText
+            }
+        } else {
+            // Ask for location permission and fetch weather for nearby cities immediately if granted
+            askLocationPermissionAndFetchWeather()
+        }
 
         // Add click listener to the search button
         searchButton.setOnClickListener {
@@ -79,18 +96,16 @@ class MainActivity : AppCompatActivity() {
 
                 searchJob = CoroutineScope(Dispatchers.Main).launch {
                     Log.d("Foxhound23989", "Starting fetchWeather for: $searchQuery")
-                    weatherViewModel.fetchWeatherByCity(searchQuery, apiKey)  // Pass the API key here
+
+                    // Save the last searched location to SharedPreferences
+                    saveLastSearch(searchQuery)
+
+                    weatherViewModel.fetchWeatherByCity(searchQuery, apiKey)
                 }
             } else {
                 Log.d("Foxhound23989", "Search query is empty")
             }
         }
-
-        // Fetch weather for the current location (example)
-        weatherViewModel.fetchWeatherByCoordinates(47.8756477, -122.1713036, apiKey)
-
-        // Ask for location permission and fetch weather for nearby cities immediately if granted
-        askLocationPermissionAndFetchWeather()
     }
 
     private fun askLocationPermissionAndFetchWeather() {
@@ -104,7 +119,8 @@ class MainActivity : AppCompatActivity() {
                 Log.d("Foxhound23989", "Location permission granted")
                 getCurrentLocation()
             } else {
-                Log.d("Foxhound23989", "Location permission denied")
+                Log.d("Foxhound23989", "Location permission denied, using default coordinates")
+                weatherViewModel.fetchWeatherByCoordinates(47.8756477, -122.1713036, apiKey)
             }
         }
 
@@ -129,17 +145,35 @@ class MainActivity : AppCompatActivity() {
                     val lon = it.longitude
                     Log.d("Foxhound23989", "Location received: lat=$lat, lon=$lon")
                     searchJob = CoroutineScope(Dispatchers.Main).launch {
-                        weatherViewModel.fetchWeatherByCoordinates(lat, lon, apiKey)  // Fetch city name by coordinates and then get weather for the city
+                        weatherViewModel.fetchWeatherByCoordinates(lat, lon, apiKey)
                     }
                 } ?: run {
                     Log.d("Foxhound23989", "Location is null")
+                    // Use default location if location is null
+                    weatherViewModel.fetchWeatherByCoordinates(47.8756477, -122.1713036, apiKey)
                 }
             }.addOnFailureListener {
                 Log.e("Foxhound23989", "Failed to get location", it)
+                // Fallback to default location
+                weatherViewModel.fetchWeatherByCoordinates(47.8756477, -122.1713036, apiKey)
             }
         }
     }
 
+
+    fun saveLastSearch(query: String) {
+        val sharedPreferences = getSharedPreferences("weather_prefs", MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putString("last_search", query)
+        editor.apply()  // Commit changes asynchronously
+        Log.d("Foxhound23989", "Last search saved: $query")  // Add this log to verify
+    }
+
+
+    fun getLastSearch(): String? {
+        val sharedPreferences = getSharedPreferences("weather_prefs", MODE_PRIVATE)
+        return sharedPreferences.getString("last_search", null)  // Default to null if no value found
+    }
 }
 
 
@@ -245,6 +279,7 @@ class WeatherViewModel(private val repository: WeatherRepository) : ViewModel() 
                 _weatherData.value = response
             } catch (e: Exception) {
                 Log.e("Foxhound23989", "Error fetching weather for city: $city", e)
+                _weatherData.value = null // Set to null on error
             }
         }
     }
