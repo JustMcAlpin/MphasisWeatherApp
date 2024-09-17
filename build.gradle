@@ -2,12 +2,16 @@
 
 buildscript {
     
+    ext {
+        agp_version = '3.3.1'
+        agp_version1 = '3.2.0'
+    }
     repositories {
         google()
         jcenter()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.2.1'
+        classpath "com.android.tools.build:gradle:$agp_version1"
         classpath 'com.google.gms:google-services:4.1.0'
         classpath 'com.neenbedankt.gradle.plugins:android-apt:1.8'
 
